@@ -26,6 +26,9 @@
 
 - 현재는 glove 300차원 pre-trained model을 사용하고 있지만 만약 다른 pre-trained된 모델을 사용하고 싶다면 embedding_dir의 값을 바꾸어주면 된다. 
 그리고 text_to_vector의 word_dimension 값을 바꿔주어야 한다. 현재는 300차원이라 300이지만 50차원을 사용하면 50으로 바꿔주어야 한다.
+    - Glove pre-trained 다운 받는 곳 : https://nlp.stanford.edu/projects/glove/
+    - FASTTEXT pre-trained 다운 받는 곳 : https://fasttext.cc/docs/en/english-vectors.html
+    - 그 외 pre-trained 데이터 다운 받는 곳 : https://github.com/RaRe-Technologies/gensim-data 
 
 
 ## build_model
@@ -38,6 +41,41 @@
 
 ## evaluate
 - 성능을 평가하는 함수
+
+
+## create_callbacks
+- epoch 마다 이전 epoch보다 accuracy가 높으며 model을 저장하게 한다.
+
+
+## main
+- 위의 정의한 함수를 load하고 model.fit을 하여 학습을 진행한다.
+
+
+
+# binary_contextualized.py
+- binary classification
+- contextualized embedding 사용
+
+
+## load_data
+- 위와 동일.
+
+
+## data_preprocissing
+- ELMo는 전체 문장을 넣기 때문에 따로 전처리 하지 않는다.
+
+
+## text_to_vector
+- ELMo는 전체 문장을 넣기 때문에 따로 vector화 시키지 않고 그대로 ELMo에 embedding에 집어 넣는다.
+
+
+## build_model
+- ELMo에 문장을 입력하면 1024차원으로 압축되어진다.
+- 그리고 dense layer를 거치면 256차원으로 압축된다.
+
+
+## evaluate
+- 위와 동일
 
 
 ## create_callbacks

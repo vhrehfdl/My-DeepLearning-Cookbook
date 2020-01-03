@@ -162,14 +162,14 @@ def create_callbacks(model_dir):
 
 
 def main():
-    base_dir = "../../../"
+    base_dir = "../../../Data"
 
-    train_dir = base_dir + "Data/binary_train_data.csv"
-    test_dir = base_dir + "Data/binary_test_data.csv"
+    train_dir = base_dir + "/binary_train_data.csv"
+    test_dir = base_dir + "/binary_test_data.csv"
 
-    model_dir = base_dir + "Data/Model/"
-    embedding_dir = base_dir + "Data/glove.840B.300d.txt"
-    pickle_dir = base_dir + "Data/embedding.pickle"
+    model_dir = base_dir + "/Model"
+    embedding_dir = base_dir + "/glove.840B.300d.txt"
+    pickle_dir = base_dir + "/embedding.pickle"
 
     train_x, train_y, test_x, test_y, val_x, val_y = load_data(train_dir, test_dir)
     train_x, test_x, val_x, tokenizer = data_preprocissing(train_x, test_x, val_x)
