@@ -78,7 +78,7 @@ def load_embeddings(path):
 
 
 # Pre-trained embedding match to my dataset.
-def text_to_vector(word_index, path, pickle_path, word_dimension):
+def text_to_vector(word_index, path, word_dimension):
     embedding_index = load_embeddings(path)
     embedding_matrix = np.zeros((len(word_index) + 1, word_dimension))
     for word, i in word_index.items():
@@ -86,9 +86,6 @@ def text_to_vector(word_index, path, pickle_path, word_dimension):
             embedding_matrix[i] = embedding_index[word]
         except KeyError:
             pass
-
-    with open(pickle_path, 'wb') as handle:
-        pickle.dump(embedding_matrix, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return embedding_matrix
 
@@ -169,14 +166,13 @@ def main():
 
     model_dir = base_dir + "/Model"
     embedding_dir = base_dir + "/glove.840B.300d.txt"
-    pickle_dir = base_dir + "/embedding.pickle"
 
     train_x, train_y, test_x, test_y, val_x, val_y = load_data(train_dir, test_dir)
     train_x, test_x, val_x, tokenizer = data_preprocissing(train_x, test_x, val_x)
-    embedding_matrix = text_to_vector(tokenizer.word_index, embedding_dir, pickle_dir, word_dimension=300)
+    embedding_matrix = text_to_vector(tokenizer.word_index, embedding_dir, word_dimension=300)
 
-    model = build_model_lstm(train_x.shape[1], embedding_matrix)
-    # model = build_model_cnn(train_x.shape[1], embedding_matrix)
+    # model = build_model_lstm(train_x.shape[1], embedding_matrix)
+    model = build_model_cnn(train_x.shape[1], embedding_matrix)
 
     callbacks = create_callbacks(model_dir)
     model.fit(x=train_x, y=train_y, epochs=3, batch_size=128, validation_data=(val_x, val_y), callbacks=callbacks)

@@ -51,6 +51,9 @@
 - 위의 정의한 함수를 load하고 model.fit을 하여 학습을 진행한다.
 
 
+<br>
+<br>
+<br>
 
 # binary_contextualized.py
 - binary classification
