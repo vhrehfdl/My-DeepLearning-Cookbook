@@ -95,10 +95,10 @@ def create_callbacks(model_dir):
 
 
 def main():
-    base_dir = "../../../Data"
+    base_dir = "../../.."
 
-    train_dir = base_dir + "/binary_train_data.csv"
-    test_dir = base_dir + "/binary_test_data.csv"
+    train_dir = base_dir + "/Data/binary_train_data.csv"
+    test_dir = base_dir + "/Data/binary_test_data.csv"
 
     model_dir = base_dir + "/Model"
 

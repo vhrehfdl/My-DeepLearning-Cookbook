@@ -82,8 +82,8 @@
 
 
 ## create_callbacks
-- epoch 마다 이전 epoch보다 accuracy가 높으며 model을 저장하게 한다.
+- 위와 동일
 
 
 ## main
-- 위의 정의한 함수를 load하고 model.fit을 하여 학습을 진행한다.
+- 위와 동일
