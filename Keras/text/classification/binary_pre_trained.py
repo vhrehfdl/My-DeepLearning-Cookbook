@@ -6,10 +6,9 @@ import keras.layers as layers
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import tensorflow_hub as hub
 from keras.callbacks import ModelCheckpoint
 from keras.engine import Layer
-from keras.layers import CuDNNLSTM, Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
+from keras.layers import Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D, LSTM
 from keras.layers import Embedding, Dense, Flatten, Input
 from keras.layers import SpatialDropout1D, add, concatenate
 from keras.layers.convolutional import Conv1D
@@ -95,19 +94,19 @@ def build_model_lstm(size, embedding_matrix):
     LSTM_UNITS = 128
     DENSE_HIDDEN_UNITS = 512
 
-    words = Input(shape=(size,))
-    x = Embedding(*embedding_matrix.shape, weights=[embedding_matrix], trainable=False)(words)
+    input_layer = Input(shape=(size,))
+    x = Embedding(*embedding_matrix.shape, weights=[embedding_matrix], trainable=False)(input_layer)
     x = SpatialDropout1D(0.2)(x)
-    x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
-    x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
+    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(x)
+    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(x)
 
     hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
 
-    result = Dense(1, activation='sigmoid')(hidden)
+    output_layer = Dense(1, activation='sigmoid')(hidden)
 
-    model = Model(inputs=words, outputs=result)
+    model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.summary()
 
@@ -134,9 +133,9 @@ def build_model_cnn(size, embedding_matrix):
     merged = concatenate(pooled_outputs, axis=1)
     dense_layer = Flatten()(merged)
 
-    result = Dense(1, activation='sigmoid')(dense_layer)
+    output_layer = Dense(1, activation='sigmoid')(dense_layer)
 
-    model = Model(inputs=input_layer, outputs=result)
+    model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.summary()
 

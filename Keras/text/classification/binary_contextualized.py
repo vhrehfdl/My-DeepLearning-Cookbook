@@ -65,14 +65,14 @@ class ElmoEmbeddingLayer(Layer):
 # 첫번째 모델
 # ELMo 256 차원 단일 모델
 def build_model_elmo():
-    input_text = layers.Input(shape=(1,), dtype="string")
+    input_layer = layers.Input(shape=(1,), dtype="string")
 
-    embedding = ElmoEmbeddingLayer()(input_text)
+    embedding = ElmoEmbeddingLayer()(input_layer)
     dense_elmo = layers.Dense(256, activation='relu')(embedding)
 
-    pred = layers.Dense(1, activation='sigmoid')(dense_elmo)
+    output_layer = layers.Dense(1, activation='sigmoid')(dense_elmo)
 
-    model = Model(inputs=[input_text], outputs=pred)
+    model = Model(inputs=[input_layer], outputs=output_layer)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.summary()
 
