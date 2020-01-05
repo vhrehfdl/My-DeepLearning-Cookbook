@@ -55,13 +55,10 @@
 <br>
 <br>
 
+
 # binary_contextualized.py
 - binary classification
 - contextualized embedding 사용
-
-
-## load_data
-- 위와 동일.
 
 
 ## data_preprocissing
@@ -77,13 +74,94 @@
 - 그리고 dense layer를 거치면 256차원으로 압축된다.
 
 
-## evaluate
-- 위와 동일
+<br>
+<br>
+<br>
 
 
-## create_callbacks
-- 위와 동일
+# binary_self_trained.py
+- binary classification
+- keras embedding layer 사용
+- word2vec, fasttext, glove 등의 외부 embedding matrix 값을 사용하지 않고 keras embedding layer를 사용한다.
 
 
-## main
-- 위와 동일
+## data_preprocissing
+- binary_pre_trained.py와 동일.
+
+## text_to_vector
+- binary_pre_trained.py와 다르게 keras embedding layer를 사용하기 때문에 따로 외부에서 embedding matrix 값을 받아오지 않는다.   
+그렇기 때문에 text_to_vector 함수 제외.
+
+## build_model
+- binary_pre_trained.py와 동일.
+
+
+
+<br>
+<br>
+<br>
+
+
+# multi_pre_trained.py
+- multi classification
+- pre-trained embedding vector 사용
+
+
+## load_data
+- multi_train_data의 label은 happy, angry, others, sad로 구성되어 있기 때문에 0, 1, 2, 3으로 바꿔주고 거기서 또 one-hot encoeding으로 변환시켜준다.
+- [0 ,0, 0, 1], [0 ,0, 1, 0], [0 ,1, 0, 0], [1 ,0, 0, 0]로 변경된다.
+
+## data_preprocissing
+- binary_pre_trained.py와 동일.
+
+## text_to_vector
+- binary_pre_trained.py와 동일.
+
+## build_model
+- output_layer의 node 개수를 category 개수와 동일하게 설정해준다. ( 여기서는 4개 )
+- output_layer의 activate function은 softmax로 설정해준다.
+
+
+
+<br>
+<br>
+<br>
+
+
+# multi_contextualized.py
+- multi classification
+- contextualized embedding 사용
+
+
+## data_preprocissing
+- binary_contextualized.py와 동일.
+
+
+## text_to_vector
+- ELMo는 전체 문장을 넣기 때문에 따로 vector화 시키지 않고 그대로 ELMo에 embedding에 집어 넣는다.
+
+
+## build_model
+- binary_contextualized.py와 동일.
+- output_layer의 node 개수만 category 개수와 동일하게 해준다.
+
+
+<br>
+<br>
+<br>
+
+
+# multi_self_trained.py
+- binary classification
+- keras embedding layer 사용
+- word2vec, fasttext, glove 등의 외부 embedding matrix 값을 사용하지 않고 keras embedding layer를 사용한다.
+
+## data_preprocissing
+- multi_pre_trained.py와 동일.
+
+## text_to_vector
+- multi_pre_trained.py와 다르게 keras embedding layer를 사용하기 때문에 따로 외부에서 embedding matrix 값을 받아오지 않는다.   
+그렇기 때문에 text_to_vector 함수 제외.
+
+## build_model
+- multi_pre_trained.py와 동일.
