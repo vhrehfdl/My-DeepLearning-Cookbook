@@ -158,12 +158,13 @@ def main():
     word_index = tokenizer.word_index
     vocab_size = len(word_index)
 
-    model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
-    # model = build_model_cnn(train_x.shape[1], vocab_size, category_num)
+    # model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
+    model = build_model_cnn(train_x.shape[1], vocab_size, category_num)
 
     callbacks = create_callbacks(model_dir)
     model.fit(x=train_x, y=train_y, epochs=2, batch_size=32, validation_data=(val_x, val_y), callbacks=callbacks)
 
+    # model.load_weights("")
     evaluate(model, test_x, test_y, target_names)
 
 

@@ -70,7 +70,6 @@ class ElmoEmbeddingLayer(Layer):
         return (input_shape[0], self.dimensions)
 
 
-# 첫번째 모델
 # ELMo 256 차원 단일 모델
 def build_model_elmo(category_size):
     input_layer = layers.Input(shape=(1,), dtype="string")
