@@ -89,6 +89,23 @@ def text_to_vector(word_index, path, word_dimension):
     return embedding_matrix
 
 
+# TextCNN
+def build_model_basic(size, embedding_matrix):
+    input_layer = Input(shape=(size,))
+
+    embedding_layer = Embedding(*embedding_matrix.shape, weights=[embedding_matrix], trainable=False)(input_layer)
+
+    dense_layer = Flatten()(embedding_layer)
+    dense_layer = Dense(64, activation='sigmoid')(dense_layer)
+    output_layer = Dense(1, activation='sigmoid')(dense_layer)
+
+    model = Model(inputs=input_layer, outputs=output_layer)
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.summary()
+
+    return model
+
+
 # BI_LSTM
 def build_model_lstm(size, embedding_matrix):
     LSTM_UNITS = 128
@@ -170,8 +187,9 @@ def main():
     train_x, test_x, val_x, tokenizer = data_preprocissing(train_x, test_x, val_x)
     embedding_matrix = text_to_vector(tokenizer.word_index, embedding_dir, word_dimension=300)
 
+    model = build_model_basic(train_x.shape[1], embedding_matrix)
     # model = build_model_lstm(train_x.shape[1], embedding_matrix)
-    model = build_model_cnn(train_x.shape[1], embedding_matrix)
+    # model = build_model_cnn(train_x.shape[1], embedding_matrix)
 
     callbacks = create_callbacks(model_dir)
     model.fit(x=train_x, y=train_y, epochs=3, batch_size=128, validation_data=(val_x, val_y), callbacks=callbacks)

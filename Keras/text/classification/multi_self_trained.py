@@ -137,7 +137,7 @@ def evaluate(model, test_x, test_y, target_names):
 
 
 def create_callbacks(model_dir):
-    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/model-weights.{epoch:02d}-{val_acc:.6f}.hdf5", monitor='val_acc', verbose=1, save_best_only=True)
+    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/cifar100_model-weights.{epoch:02d}-{val_acc:.6f}.hdf5", monitor='val_acc', verbose=1, save_best_only=True)
     return [checkpoint_callback]
 
 
@@ -158,13 +158,13 @@ def main():
     word_index = tokenizer.word_index
     vocab_size = len(word_index)
 
-    # model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
+    # cifar100_model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
     model = build_model_cnn(train_x.shape[1], vocab_size, category_num)
 
     callbacks = create_callbacks(model_dir)
     model.fit(x=train_x, y=train_y, epochs=2, batch_size=32, validation_data=(val_x, val_y), callbacks=callbacks)
 
-    # model.load_weights("")
+    # cifar100_model.load_weights("")
     evaluate(model, test_x, test_y, target_names)
 
 

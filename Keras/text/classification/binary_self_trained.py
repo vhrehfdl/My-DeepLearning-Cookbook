@@ -1,15 +1,7 @@
-import os
-import pickle
-
-import keras.backend as K
-import keras.layers as layers
-import numpy as np
 import pandas as pd
-import tensorflow as tf
 from keras.callbacks import ModelCheckpoint
-from keras.engine import Layer
-from keras.layers import LSTM, Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
 from keras.layers import Embedding, Dense, Flatten, Input
+from keras.layers import LSTM, Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
 from keras.layers import SpatialDropout1D, add, concatenate
 from keras.layers.convolutional import Conv1D
 from keras.layers.pooling import MaxPool1D
@@ -22,14 +14,17 @@ from sklearn.model_selection import train_test_split
 
 # load data from csv file.
 def load_data(train_dir, test_dir):
-    train = pd.read_csv(train_dir)
-    test = pd.read_csv(test_dir)
+    train = pd.read_csv(train_dir, delimiter="\t")
+    test = pd.read_csv(test_dir, delimiter="\t")
+
+    train = train.dropna()
+    test = test.dropna()
 
     train, val = train_test_split(train, test_size=0.1, random_state=42)
 
-    train_x, train_y = train["text"], train["label"]
-    test_x, test_y = test["text"], test["label"]
-    val_x, val_y = val["text"], val["label"]
+    train_x, train_y = train["document"], train["label"]
+    test_x, test_y = test["document"], test["label"]
+    val_x, val_y = val["document"], val["label"]
 
     return train_x, train_y, test_x, test_y, val_x, val_y
 
@@ -138,8 +133,11 @@ def create_callbacks(model_dir):
 def main():
     base_dir = "../../.."
 
-    train_dir = base_dir + "/Data/binary_train_data.csv"
-    test_dir = base_dir + "/Data/binary_test_data.csv"
+    # train_dir = base_dir + "/Data/binary_train_data.csv"
+    # test_dir = base_dir + "/Data/binary_test_data.csv"
+
+    train_dir = base_dir + "/Data/ratings_train.txt"
+    test_dir = base_dir + "/Data/ratings_test.txt"
 
     model_dir = base_dir + "/Model"
 
@@ -155,11 +153,12 @@ def main():
     print(train_x.shape[0])
     print(train_x.shape[1])
 
+    # model = build_model_basic(train_x.shape[1], embedding_matrix)
     # model = build_model_lstm(train_x.shape[1], embedding_matrix)
     model = build_model_cnn(train_x.shape[1], vocab_size)
 
     callbacks = create_callbacks(model_dir)
-    model.fit(x=train_x, y=train_y, epochs=3, batch_size=128, validation_data=(val_x, val_y), callbacks=callbacks)
+    model.fit(x=train_x, y=train_y, epochs=10, batch_size=128, validation_data=(val_x, val_y), callbacks=callbacks, verbose=2)
 
     evaluate(model, test_x, test_y)
 
