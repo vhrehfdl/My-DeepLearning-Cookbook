@@ -1,1 +1,6 @@
 Data/glove.840B.300d.txt
+#Pytorch/text/classification/snapshot
+#Pytorch/text/classification/.vector_cache
+Pytorch/
+Keras/text/classification/embedding_binary.pickle
+Keras/text/classification/embedding_multi.pickle

@@ -1,4 +1,7 @@
+import os
+
 import pandas as pd
+import tensorflow as tf
 from keras.callbacks import ModelCheckpoint
 from keras.layers import Embedding, Dense, Flatten, Input
 from keras.layers import LSTM, Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
@@ -12,19 +15,25 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
 
+# gpu setting.
+def set_env():
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.5
+    session = tf.Session(config=config)
+    session
+
+
 # load data from csv file.
 def load_data(train_dir, test_dir):
-    train = pd.read_csv(train_dir, delimiter="\t")
-    test = pd.read_csv(test_dir, delimiter="\t")
-
-    train = train.dropna()
-    test = test.dropna()
+    train = pd.read_csv(train_dir)
+    test = pd.read_csv(test_dir)
 
     train, val = train_test_split(train, test_size=0.1, random_state=42)
 
-    train_x, train_y = train["document"], train["label"]
-    test_x, test_y = test["document"], test["label"]
-    val_x, val_y = val["document"], val["label"]
+    train_x, train_y = train["text"], train["label"]
+    test_x, test_y = test["text"], test["label"]
+    val_x, val_y = val["text"], val["label"]
 
     return train_x, train_y, test_x, test_y, val_x, val_y
 
@@ -37,7 +46,6 @@ def data_preprocissing(train_x, test_x, val_x):
     test_x = test_x.tolist()
     val_x = val_x.tolist()
 
-
     tokenizer = text.Tokenizer(filters=CHARS_TO_REMOVE)
     tokenizer.fit_on_texts(train_x + test_x + val_x)  # Make dictionary
 
@@ -45,7 +53,6 @@ def data_preprocissing(train_x, test_x, val_x):
     train_x = tokenizer.texts_to_sequences(train_x)
     test_x = tokenizer.texts_to_sequences(test_x)
     val_x = tokenizer.texts_to_sequences(val_x)
-
 
     temp_list = []
     total_list = list(train_x) + list(test_x) + list(val_x)
@@ -62,23 +69,46 @@ def data_preprocissing(train_x, test_x, val_x):
     return train_x, test_x, val_x, tokenizer
 
 
-# BI_LSTM
-def build_model_lstm(size, vocab_size):
-    LSTM_UNITS = 128
-    DENSE_HIDDEN_UNITS = 512
+def build_model_basic(size, vocab_size):
+    ### Hyper Parameter
+    embedding_dim = 300
+    hidden_units = 64
 
+    ### Model Architecture
     input_layer = Input(shape=(size,))
-    embedding_layer = Embedding(vocab_size, 300)(input_layer)
-    embedding_layer = SpatialDropout1D(0.2)(embedding_layer)
 
-    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(embedding_layer)
-    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(x)
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
 
-    hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x)])
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+    dense_layer = Flatten()(embedding_layer)
+    hidden_layer = Dense(hidden_units, activation='sigmoid')(dense_layer)
+    output_layer = Dense(1, activation='sigmoid')(hidden_layer)
 
-    output_layer = Dense(1, activation='sigmoid')(hidden)
+    model = Model(inputs=input_layer, outputs=output_layer)
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.summary()
+
+    return model
+
+
+def build_model_lstm(size, vocab_size):
+    ### Hyper Parameter
+    embedding_dim = 300
+    lstm_units = 128
+    hidden_units = 512
+
+    ### Model Architecture
+    input_layer = Input(shape=(size,))
+
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
+
+    lstm_layer = Bidirectional(LSTM(lstm_units, return_sequences=True))(embedding_layer)
+    lstm_layer = Bidirectional(LSTM(lstm_units, return_sequences=True))(lstm_layer)
+
+    hidden_layer = concatenate([GlobalMaxPooling1D()(lstm_layer), GlobalAveragePooling1D()(lstm_layer)])
+    hidden_layer = add([hidden_layer, Dense(hidden_units, activation='relu')(hidden_layer)])
+    hidden_layer = add([hidden_layer, Dense(hidden_units, activation='relu')(hidden_layer)])
+
+    output_layer = Dense(1, activation='sigmoid')(hidden_layer)
 
     model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -89,15 +119,16 @@ def build_model_lstm(size, vocab_size):
 
 # TextCNN
 def build_model_cnn(size, vocab_size):
+    ### Hyper Parameter
+    embedding_dim = 300
     num_filters = 128
     filter_sizes = [3, 4, 5]
 
+    ### Model Architecture
     input_layer = Input(shape=(size,))
-    embedding_layer = Embedding(vocab_size, 300)(input_layer)
-    embedding_layer = SpatialDropout1D(0.2)(embedding_layer)
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
 
     pooled_outputs = []
-
     for filter_size in filter_sizes:
         x = Conv1D(num_filters, filter_size, activation='relu')(embedding_layer)
         x = MaxPool1D(pool_size=2)(x)
@@ -125,40 +156,35 @@ def evaluate(model, test_x, test_y):
 
 
 def create_callbacks(model_dir):
-    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/model-weights.{epoch:02d}-{val_acc:.6f}.hdf5",
-                                          monitor='val_acc', verbose=1, save_best_only=True)
+    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/model-weights.{epoch:02d}-{val_acc:.6f}.hdf5", monitor='val_acc', verbose=1, save_best_only=True)
     return [checkpoint_callback]
 
 
 def main():
+    ### Directory Setting.
     base_dir = "../../.."
 
-    # train_dir = base_dir + "/Data/binary_train_data.csv"
-    # test_dir = base_dir + "/Data/binary_test_data.csv"
-
-    train_dir = base_dir + "/Data/ratings_train.txt"
-    test_dir = base_dir + "/Data/ratings_test.txt"
+    train_dir = base_dir + "/Data/binary_train_data.csv"
+    test_dir = base_dir + "/Data/binary_test_data.csv"
 
     model_dir = base_dir + "/Model"
 
+
+    ### Flow
+    set_env()
+
     train_x, train_y, test_x, test_y, val_x, val_y = load_data(train_dir, test_dir)
+
     train_x, test_x, val_x, tokenizer = data_preprocissing(train_x, test_x, val_x)
 
-    word_index = tokenizer.word_index
-    vocab_size = len(word_index)
+    vocab_size = len(tokenizer.word_index)
 
-    print(vocab_size)
-
-    print(train_x.shape)
-    print(train_x.shape[0])
-    print(train_x.shape[1])
-
-    # model = build_model_basic(train_x.shape[1], embedding_matrix)
-    # model = build_model_lstm(train_x.shape[1], embedding_matrix)
+    # model = build_model_basic(train_x.shape[1], vocab_size)
+    # model = build_model_lstm(train_x.shape[1], vocab_size)
     model = build_model_cnn(train_x.shape[1], vocab_size)
 
     callbacks = create_callbacks(model_dir)
-    model.fit(x=train_x, y=train_y, epochs=10, batch_size=128, validation_data=(val_x, val_y), callbacks=callbacks, verbose=2)
+    model.fit(x=train_x, y=train_y, epochs=3, batch_size=64, validation_data=(val_x, val_y), callbacks=callbacks)
 
     evaluate(model, test_x, test_y)
 

@@ -1,25 +1,29 @@
 import os
-import pickle
 
 import keras
-import keras.backend as K
-import keras.layers as layers
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras.callbacks import ModelCheckpoint
-from keras.engine import Layer
-from keras.layers import CuDNNLSTM, Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D, LSTM
-from keras.layers import Input, Dense, Embedding, SpatialDropout1D, add, concatenate, Flatten
+from keras.layers import Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D, LSTM
+from keras.layers import Input, Dense, Embedding, add, concatenate, Flatten
 from keras.layers.convolutional import Conv1D
 from keras.layers.pooling import MaxPool1D
 from keras.models import Model
 from keras.preprocessing import text, sequence
-from sklearn import preprocessing, naive_bayes
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn import preprocessing
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+
+
+# gpu setting.
+def set_env():
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.5
+    session = tf.Session(config=config)
+    session
 
 
 # load data from csv file.
@@ -70,22 +74,47 @@ def data_preprocissing(train_x, test_x, val_x):
     return train_x, test_x, val_x, tokenizer
 
 
+def build_model_basic(size, vocab_size, category_size):
+    ### Hyper Parameter
+    embedding_dim = 300
+    hidden_units = 64
+
+    ### Model Architecture
+    input_layer = Input(shape=(size,))
+
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
+
+    dense_layer = Flatten()(embedding_layer)
+    hidden_layer = Dense(hidden_units, activation='relu')(dense_layer)
+    output_layer = Dense(category_size, activation='softmax')(hidden_layer)
+
+    model = Model(inputs=input_layer, outputs=output_layer)
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.summary()
+
+    return model
+
+
 # BI_LSTM
 def build_model_lstm(size, vocab_size, category_size):
-    LSTM_UNITS = 128
-    DENSE_HIDDEN_UNITS = 512
+    ### Hyper Parameter
+    embedding_dim = 300
+    lstm_units = 128
+    hidden_units = 512
 
+    ### Model Architecture
     input_layer = Input(shape=(size,))
-    embedding_layer = Embedding(vocab_size, 300)(input_layer)
 
-    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(embedding_layer)
-    x = Bidirectional(LSTM(LSTM_UNITS, return_sequences=True))(x)
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
 
-    hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x)])
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+    lstm_layer = Bidirectional(LSTM(lstm_units, return_sequences=True))(embedding_layer)
+    lstm_layer = Bidirectional(LSTM(lstm_units, return_sequences=True))(lstm_layer)
 
-    output_layer = Dense(category_size, activation='softmax')(hidden)
+    hidden_layer = concatenate([GlobalMaxPooling1D()(lstm_layer), GlobalAveragePooling1D()(lstm_layer)])
+    hidden_layer = add([hidden_layer, Dense(hidden_units, activation='relu')(hidden_layer)])
+    hidden_layer = add([hidden_layer, Dense(hidden_units, activation='relu')(hidden_layer)])
+
+    output_layer = Dense(category_size, activation='softmax')(hidden_layer)
 
     model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -96,16 +125,17 @@ def build_model_lstm(size, vocab_size, category_size):
 
 # TextCNN
 def build_model_cnn(size, vocab_size, category_size):
+    ### Hyper Parameter
+    embedding_dim = 300
     num_filters = 128
     filter_sizes = [3, 4, 5]
 
+    ### Model Architecture
     input_layer = Input(shape=(size,))
 
-    embedding_layer = Embedding(vocab_size, 300)(input_layer)
-    embedding_layer = SpatialDropout1D(0.2)(embedding_layer)
+    embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
 
     pooled_outputs = []
-
     for filter_size in filter_sizes:
         x = Conv1D(num_filters, filter_size, activation='relu')(embedding_layer)
         x = MaxPool1D(pool_size=2)(x)
@@ -125,7 +155,6 @@ def build_model_cnn(size, vocab_size, category_size):
 
 def evaluate(model, test_x, test_y, target_names):
     predictions = model.predict(test_x)
-
     y_pred = predictions.argmax(axis=-1)
 
     print("Accuracy: %.2f%%" % (accuracy_score(test_y, y_pred) * 100.0))
@@ -137,11 +166,12 @@ def evaluate(model, test_x, test_y, target_names):
 
 
 def create_callbacks(model_dir):
-    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/cifar100_model-weights.{epoch:02d}-{val_acc:.6f}.hdf5", monitor='val_acc', verbose=1, save_best_only=True)
+    checkpoint_callback = ModelCheckpoint(filepath=model_dir + "/model-weights.{epoch:02d}-{val_acc:.6f}.hdf5", monitor='val_acc', verbose=1, save_best_only=True)
     return [checkpoint_callback]
 
 
 def main():
+    ### Directory Setting.
     base_dir = "../../.."
 
     train_dir = base_dir + "/Data/multi_train_data.csv"
@@ -149,8 +179,12 @@ def main():
 
     model_dir = base_dir + "/Model"
 
+
+    ### Flow
     category_num = 4
     target_names = ['0', '1', '2', '3']
+
+    set_env()
 
     train_x, train_y, test_x, test_y, val_x, val_y = load_data(train_dir, test_dir, category_num)
     train_x, test_x, val_x, tokenizer = data_preprocissing(train_x, test_x, val_x)
@@ -158,13 +192,13 @@ def main():
     word_index = tokenizer.word_index
     vocab_size = len(word_index)
 
-    # cifar100_model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
-    model = build_model_cnn(train_x.shape[1], vocab_size, category_num)
+    model = build_model_basic(train_x.shape[1], vocab_size, category_num)
+    # model = build_model_lstm(train_x.shape[1], vocab_size, category_num)
+    # model = build_model_cnn(train_x.shape[1], vocab_size, category_num)
 
     callbacks = create_callbacks(model_dir)
     model.fit(x=train_x, y=train_y, epochs=2, batch_size=32, validation_data=(val_x, val_y), callbacks=callbacks)
 
-    # cifar100_model.load_weights("")
     evaluate(model, test_x, test_y, target_names)
 
 

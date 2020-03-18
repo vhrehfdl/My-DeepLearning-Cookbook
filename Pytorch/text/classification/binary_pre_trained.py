@@ -1,227 +1,184 @@
-import random
-import time
+import os
 
+import spacy
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.autograd import Variable
+import torch.nn.functional as F
 from torchtext import data
 from torchtext.data import TabularDataset
 from torchtext.vocab import GloVe
 
 
-# load data from csv file.
 def load_data(train_dir, test_dir):
-    tokenizer = lambda x: x.split()
+    NLP = spacy.load('en_core_web_sm')
+    tokenizer = lambda sent: [x.text for x in NLP.tokenizer(sent) if x.text != " "]
 
-    TEXT = data.Field(sequential=True, tokenize=tokenizer, lower=True, batch_first=True, fix_length=200)
-    LABEL = data.LabelField(dtype=torch.float)
+    TEXT = data.Field(sequential=True, batch_first=True, lower=True, fix_length=50, tokenize=tokenizer)
+    LABEL = data.Field(sequential=False, batch_first=True)
 
     train_data = TabularDataset(path=train_dir, skip_header=True, format='csv', fields=[('text', TEXT), ('label', LABEL)])
     test_data = TabularDataset(path=test_dir, skip_header=True, format='csv', fields=[('text', TEXT), ('label', LABEL)])
 
-    train_data, valid_data = train_data.split(random_state=random.seed(1234))
+    train_data, valid_data = train_data.split(split_ratio=0.8)
 
     return train_data, valid_data, test_data, TEXT, LABEL
 
 
-def data_preprocissing(train_data, valid_data, test_data, TEXT, LABEL, device):
-    TEXT.build_vocab(train_data, vectors=GloVe(name='840B', dim=300))
+def data_preprocissing(train_data, valid_data, test_data, TEXT, LABEL, device, batch_size):
+    TEXT.build_vocab(train_data, vectors=GloVe(name='6B', dim=300))
     LABEL.build_vocab(train_data)
 
-    word_embeddings = TEXT.vocab.vectors
-    vocab_size = len(TEXT.vocab)
+    train_iter, val_iter = data.BucketIterator.splits((train_data, valid_data), batch_size=batch_size, device=device,
+                                                      sort_key=lambda x: len(x.text), sort_within_batch=False, repeat=False)
+    test_iter = data.Iterator(test_data, batch_size=batch_size, device=device, shuffle=False, sort=False, sort_within_batch=False)
 
-    print("vocab size => ", vocab_size)
-
-    train_iterator, valid_iterator, test_iterator = data.BucketIterator.splits((train_data, valid_data, test_data), batch_size=32,
-                                                                   sort_key=lambda x: len(x.text), repeat=False,
-                                                                   shuffle=True, device=device)
-
-    return train_iterator, valid_iterator, test_iterator, TEXT, LABEL, word_embeddings, vocab_size
+    return train_iter, val_iter, test_iter, TEXT, LABEL
 
 
 class BasicModel(nn.Module):
-    def __init__(self, batch_size, output_size, hidden_size, vocab_size, embedding_length, weights):
+    def __init__(self, hidden_dim, n_vocab, embed_dim, n_classes, word_embeddings):
         super(BasicModel, self).__init__()
+        self.embed = nn.Embedding(n_vocab, embed_dim)
+        self.embed.weight = nn.Parameter(word_embeddings, requires_grad=False)
+        self.linear = nn.Linear(embed_dim * 50, hidden_dim)
+        self.out = nn.Linear(hidden_dim, n_classes)
 
-        self.batch_size = batch_size
-        self.output_size = output_size
-        self.hidden_size = hidden_size
-        self.vocab_size = vocab_size
-        self.embedding_length = embedding_length
-        self.word_embeddings = nn.Embedding(vocab_size, embedding_length)
-        self.word_embeddings.weight = nn.Parameter(weights, requires_grad=False)
-        self.linear = nn.Linear(vocab_size, hidden_size)
-        self.label = nn.Linear(hidden_size, output_size)
+    def forward(self, x):
+        x = self.embed(x)
+        x = x.view(x.size(0), -1)   # 2차원 Flatten
+        x = self.linear(x)
+        print(x.shape)
+        logit = self.out(x)
 
-    def forward(self, input_sentence, batch_size=None):
-        input = self.word_embeddings(input_sentence)  # embedded input of shape = (batch_size, num_sequences, embedding_length)
-        input = input.permute(1, 0, 2)  # input.size() = (num_sequences, batch_size, embedding_length)
-
-
-        output, (final_hidden_state, final_cell_state) = self.lstm(input, (h_0, c_0))
-        self.linear()
-        final_output = self.label(final_hidden_state[-1])  # final_hidden_state.size() = (1, batch_size, hidden_size) & final_output.size() = (batch_size, output_size)
-
-        return final_output
+        return logit
 
 
-class LSTMClassifier(nn.Module):
-    def __init__(self, batch_size, output_size, hidden_size, vocab_size, embedding_length, weights):
-        super(LSTMClassifier, self).__init__()
+class TextCNN(nn.Module):
+    def __init__(self, hidden_dim, n_vocab, embed_dim, n_classes, word_embeddings):
+        super(TextCNN, self).__init__()
+        num_channels = 100
+        kernel_size = [3, 4, 5]
+        max_sen_len = 50
+        dropout_keep = 0.8
 
-        self.batch_size = batch_size
-        self.output_size = output_size
-        self.hidden_size = hidden_size
-        self.vocab_size = vocab_size
-        self.embedding_length = embedding_length
-        self.word_embeddings = nn.Embedding(vocab_size, embedding_length)  # Initializing the look-up table.
-        self.word_embeddings.weight = nn.Parameter(weights, requires_grad=False)  # Assigning the look-up table to the pre-trained GloVe word embedding.
-        self.lstm = nn.LSTM(embedding_length, hidden_size)
-        self.label = nn.Linear(hidden_size, output_size)
+        self.embeddings = nn.Embedding(n_vocab, embed_dim)
+        self.embeddings.weight = nn.Parameter(word_embeddings, requires_grad=False)
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(in_channels=embed_dim, out_channels=num_channels, kernel_size=kernel_size[0]),
+            nn.ReLU(),
+            nn.MaxPool1d(max_sen_len - kernel_size[0] + 1)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(in_channels=embed_dim, out_channels=num_channels, kernel_size=kernel_size[1]),
+            nn.ReLU(),
+            nn.MaxPool1d(max_sen_len - kernel_size[1] + 1)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(in_channels=embed_dim, out_channels=num_channels,
+                      kernel_size=kernel_size[2]),
+            nn.ReLU(),
+            nn.MaxPool1d(max_sen_len - kernel_size[2] + 1)
+        )
 
-    def forward(self, input_sentence, batch_size=None):
-        input = self.word_embeddings(input_sentence)  # embedded input of shape = (batch_size, num_sequences, embedding_length)
-        input = input.permute(1, 0, 2)  # input.size() = (num_sequences, batch_size, embedding_length)
+        self.dropout = nn.Dropout(dropout_keep)
 
-        if batch_size is None:
-            h_0 = Variable(torch.zeros(1, self.batch_size, self.hidden_size).cuda())  # Initial hidden state of the LSTM
-            c_0 = Variable(torch.zeros(1, self.batch_size, self.hidden_size).cuda())  # Initial cell state of the LSTM
-        else:
-            h_0 = Variable(torch.zeros(1, batch_size, self.hidden_size).cuda())
-            c_0 = Variable(torch.zeros(1, batch_size, self.hidden_size).cuda())
-        # print("check =>", input.shape)
-        output, (final_hidden_state, final_cell_state) = self.lstm(input, (h_0, c_0))
-        print("check1 =>", final_hidden_state.shape)
-        final_output = self.label(final_hidden_state[-1])  # final_hidden_state.size() = (1, batch_size, hidden_size) & final_output.size() = (batch_size, output_size)
-        print("check2 =>", final_hidden_state[-1].shape)
-        print("check3 =>", final_output.shape)
+        # Fully-Connected Layer
+        self.fc = nn.Linear(num_channels * len(kernel_size), n_classes)
 
-        return final_output
+        # Softmax non-linearity
+        self.softmax = nn.Softmax()
 
+    def forward(self, x):
+        # x.shape = (max_sen_len, batch_size)
+        embedded_sent = self.embeddings(x).permute(0, 2, 1)
+        # embedded_sent.shape = (batch_size=64,embed_size=300,max_sen_len=20)
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        conv_out1 = self.conv1(embedded_sent).squeeze(2)  # shape=(64, num_channels, 1) (squeeze 1)
+        conv_out2 = self.conv2(embedded_sent).squeeze(2)
+        conv_out3 = self.conv3(embedded_sent).squeeze(2)
 
+        all_out = torch.cat((conv_out1, conv_out2, conv_out3), 1)
+        final_feature_map = self.dropout(all_out)
+        final_out = self.fc(final_feature_map)
 
-def binary_accuracy(preds, y):
-    """
-    Returns accuracy per batch, i.e. if you get 8/10 right, this returns 0.8, NOT 8
-    """
-
-    # round predictions to the closest integer
-    rounded_preds = torch.round(torch.sigmoid(preds))
-    correct = (rounded_preds == y).float()  # convert into float for division
-    acc = correct.sum() / len(correct)
-    return acc
+        return self.softmax(final_out)
 
 
-def train(model, iterator, optimizer, criterion):
-    epoch_loss = 0
-    epoch_acc = 0
-
+def train(model, optimizer, train_iter, device):
     model.train()
+    for b, batch in enumerate(train_iter):
+        x, y = batch.text.to(device), batch.label.to(device)
+        y.data.sub_(1)  # 레이블 값을 0과 1로 변환
+        optimizer.zero_grad()
 
-    for batch in iterator:
-        if batch.text.shape[0] == 32:
-            optimizer.zero_grad()
-            predictions = model(batch.text).squeeze(1)
-            loss = criterion(predictions, batch.label)
-            acc = binary_accuracy(predictions, batch.label)
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item()
-            epoch_acc += acc.item()
-
-    return epoch_loss / len(iterator), epoch_acc / len(iterator)
+        logit = model(x)
+        loss = F.cross_entropy(logit, y)
+        loss.backward()
+        optimizer.step()
 
 
-def evaluate(model, iterator, criterion):
-    epoch_loss = 0
-    epoch_acc = 0
-
+def evaluate(model, val_iter, device):
     model.eval()
+    corrects, total_loss = 0, 0
+    print(val_iter)
+    for batch in val_iter:
+        x, y = batch.text.to(device), batch.label.to(device)
+        y.data.sub_(1)  # 레이블 값을 0과 1로 변환
+        logit = model(x)
+        loss = F.cross_entropy(logit, y, reduction='sum')
+        total_loss += loss.item()
+        corrects += (logit.max(1)[1].view(y.size()).data == y.data).sum()
+    size = len(val_iter.dataset)
+    avg_loss = total_loss / size
+    avg_accuracy = 100.0 * corrects / size
+    return avg_loss, avg_accuracy
 
-    with torch.no_grad():
-        for batch in iterator:
-            if batch.text.shape[0] == 32:
-                predictions = model(batch.text).squeeze(1)
 
-                loss = criterion(predictions, batch.label)
-
-                acc = binary_accuracy(predictions, batch.label)
-
-                epoch_loss += loss.item()
-                epoch_acc += acc.item()
-
-    return epoch_loss / len(iterator), epoch_acc / len(iterator)
-
-
-def epoch_time(start_time, end_time):
-    elapsed_time = end_time - start_time
-    elapsed_mins = int(elapsed_time / 60)
-    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
-    return elapsed_mins, elapsed_secs
+def save_model(best_val_loss, val_loss, model, model_dir):
+    # 검증 오차가 가장 적은 최적의 모델을 저장
+    if not best_val_loss or val_loss < best_val_loss:
+        if not os.path.isdir("snapshot"):
+            os.makedirs("snapshot")
+        torch.save(model.state_dict(), model_dir)
 
 
 def main():
-    base_dir = "../../.."
+    # 하이퍼파라미터
+    batch_size = 64
+    lr = 0.001
+    EPOCHS = 3
+    n_classes = 2
+    embedding_dim = 300
+    hidden_dim = 32
 
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
+
+    base_dir = "../../.."
     train_dir = base_dir + "/Data/binary_train_data.csv"
     test_dir = base_dir + "/Data/binary_test_data.csv"
+    model_dir = "./snapshot/txtclassification.pt"
 
-    torch.manual_seed(1234)
-    torch.backends.cudnn.deterministic = True
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    train_data, valid_data, test_data, TEXT, LABEL = load_data(train_dir, test_dir)
+    train_iter, val_iter, test_iter, TEXT, LABEL = data_preprocissing(train_data, valid_data, test_data, TEXT, LABEL, device, batch_size)
 
-    train_data, val_data, test_data, TEXT, LABEL = load_data(train_dir, test_dir)
-    train_iterator, valid_iterator, test_iterator, TEXT, LABEL, word_embeddings, vocab_size = data_preprocissing(train_data, val_data, test_data, TEXT, LABEL, device)
+    vocab_size = len(TEXT.vocab)
+    word_embeddings = TEXT.vocab.vectors
 
-    INPUT_DIM = len(TEXT.vocab)
-    EMBEDDING_DIM = 300
-    HIDDEN_DIM = 256
-    OUTPUT_DIM = 1
+    # model = BasicModel(hidden_dim, vocab_size, embedding_dim, n_classes, word_embeddings).to(device)
+    model = TextCNN(hidden_dim, vocab_size, embedding_dim, n_classes, word_embeddings).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # model = BasicModel(128, OUTPUT_DIM, HIDDEN_DIM, vocab_size, EMBEDDING_DIM, word_embeddings)
-    model = LSTMClassifier(128, OUTPUT_DIM, HIDDEN_DIM, vocab_size, EMBEDDING_DIM, word_embeddings)
-    # model = LSTMTagger(EMBEDDING_DIM, HIDDEN_DIM, INPUT_DIM, OUTPUT_DIM)
+    best_val_loss = None
+    for e in range(1, EPOCHS + 1):
+        train(model, optimizer, train_iter, device)
+        val_loss, val_accuracy = evaluate(model, val_iter, device)
+        print("[Epoch: %d] val loss : %5.2f | val accuracy : %5.2f" % (e, val_loss, val_accuracy))
+        save_model(best_val_loss, val_loss, model, model_dir)
 
-    print(f'The model has {count_parameters(model):,} trainable parameters')
-
-    optimizer = optim.SGD(model.parameters(), lr=0.03)
-    criterion = nn.BCEWithLogitsLoss()
-    model = model.to(device)
-    criterion = criterion.to(device)
-
-    N_EPOCHS = 30
-    best_valid_loss = float('inf')
-
-    for epoch in range(N_EPOCHS):
-
-        start_time = time.time()
-
-        train_loss, train_acc = train(model, train_iterator, optimizer, criterion)
-        valid_loss, valid_acc = evaluate(model, valid_iterator, criterion)
-
-        end_time = time.time()
-
-        epoch_mins, epoch_secs = epoch_time(start_time, end_time)
-
-        if valid_loss < best_valid_loss:
-            best_valid_loss = valid_loss
-            torch.save(model.state_dict(), 'tut1_model.pt')
-
-        print(f'Epoch: {epoch + 1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s')
-        print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc * 100:.2f}%')
-        print(f'\t Val. Loss: {valid_loss:.3f} |  Val. Acc: {valid_acc * 100:.2f}%')
-
-    model.load_state_dict(torch.load('tut1_model.pt'))
-
-    test_loss, test_acc = evaluate(model, test_iterator, criterion)
-
-    print(f'Test Loss: {test_loss:.3f} | Test Acc: {test_acc * 100:.2f}%')
+    model.load_state_dict(torch.load(model_dir))
+    test_loss, test_acc = evaluate(model, test_iter, device)
+    print('테스트 오차: %5.2f | 테스트 정확도: %5.2f' % (test_loss, test_acc))
 
 
 if __name__ == '__main__':
